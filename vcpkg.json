@@ -1,0 +1,12 @@
+{
+  "dependencies": [
+    {
+      "name": "hello-imgui",
+      "features": [
+        "glfw-binding",
+        "opengl3-binding"
+      ]
+    },
+    "boost-multiprecision"
+  ]
+}
