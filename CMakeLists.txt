@@ -1,16 +1,15 @@
 cmake_minimum_required(VERSION 3.15)
 project(gallery_of_babel CXX)
-set(CMAKE_CXX_STANDARD 17)
 find_package(hello-imgui CONFIG REQUIRED)
 
 set (
     SRC_FILES
     src/main.cpp
     src/glb_app.cpp
+    assets/resource.rc
 )
 
-add_executable(gallery_of_babel)
-
+add_executable(gallery_of_babel WIN32)
 
 target_sources(gallery_of_babel PRIVATE ${SRC_FILES})
 target_compile_features(gallery_of_babel PRIVATE cxx_std_20)

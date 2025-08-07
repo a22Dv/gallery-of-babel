@@ -1,6 +1,7 @@
 #pragma once
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/detail/default_ops.hpp>
 #include <hello_imgui/runner_params.h>
 #include <string>
@@ -21,6 +22,7 @@ struct ApplicationState {
     mp::cpp_int imgIdx{};
     std::uint64_t sliderIdx{};
     std::string path{};
+    bool showInputPanel{true};
 };
 
 class Application {
@@ -28,8 +30,11 @@ class Application {
     ApplicationState state{};
     const std::string title{"Gallery of Babel"};
     HelloImGui::RunnerParams rParams{};
-    void updateGui();
+    void postInit();
     void randomGen();
+    void controlWindow();
+    void additionalControlWindow();
+    void update();
     void sliderInterpolate();
 
   public:
