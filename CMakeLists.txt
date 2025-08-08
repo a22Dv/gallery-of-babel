@@ -6,7 +6,7 @@ set (
     SRC_FILES
     src/main.cpp
     src/glb_app.cpp
-    assets/resource.rc
+    src/resource.rc
 )
 
 add_executable(gallery_of_babel WIN32)
