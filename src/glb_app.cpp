@@ -1,4 +1,3 @@
-#include <cstring>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
@@ -122,22 +121,35 @@ void Application::updateTexture() {
     }};
     switch (static_cast<SpatialInterpretation>(state.spInterp)) {
     case SpatialInterpretation::INTERLEAVED:
-        mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
+        mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        exportBuffer[0] &= ~(state.shouldClearSentinel ? 0b1000'0000 : 0);
+        state.textureData.texture = exportBuffer;
         break;
     case SpatialInterpretation::INTERLEAVED_REVERSED:
-        mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
+        mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        exportBuffer[0] &= ~(state.shouldClearSentinel ? 0b1000'0000 : 0);
+        state.textureData.texture = exportBuffer;
         std::reverse(state.textureData.texture.begin(), state.textureData.texture.end());
         break;
     case SpatialInterpretation::PLANAR:
         mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        exportBuffer[0] &= ~(state.shouldClearSentinel ? 0b1000'0000 : 0);
         interleavedToPlanar();
         break;
     case SpatialInterpretation::PLANAR_REVERSED:
         mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        exportBuffer[0] &= ~(state.shouldClearSentinel ? 0b1000'0000 : 0);
         interleavedToPlanar();
         std::reverse(state.textureData.texture.begin(), state.textureData.texture.end());
         break;
     case SpatialInterpretation::GRAY_CODE: {
+        /*
+            Bypasses sentinel bit correction logic. Left as is, as
+            Gray code scrambles the index itself, and does not operate
+            on some other representation of it like the other modes.
+            mp::export_bits always "efficiently" skips leading zeroes.
+            Visually flushing the image to the left. 
+        */
         const mp::cpp_int gImg{state.imgIdx ^ (state.imgIdx >> 1)};
         mp::export_bits(gImg, state.textureData.texture.begin(), CHAR_BIT);
         break;
@@ -194,7 +206,7 @@ void Application::additionalControlWindow() {
     ImGui::PushItemWidth(-1);
     if (ImGui::SliderScalar(
             "##", ImGuiDataType_::ImGuiDataType_U64, &state.jumpSliderIdx, &state.minSlider,
-            &state.maxJumpIntervalSlider, std::format("Approx. Interval: 1x10^{}", state.jumpSliderIdx).c_str()
+            &state.maxJumpIntervalSlider, std::format("Interval: 1x10^{}", state.jumpSliderIdx).c_str()
         )) {
         state.jumpIntervalIdx = mp::pow(mp::cpp_int{10}, state.jumpSliderIdx);
     }
@@ -367,17 +379,6 @@ void Application::loadFile() {
     std::string extension{filePath.extension().string()};
     std::vector<std::uint8_t> idxBuffer(imgWidth * imgHeight * imgCh, 0);
     if (extension == ".png" || extension == ".jpg") {
-        /*
-            Refactor to row-wise memcpy if performance
-            in this part in particular takes a hit.
-            NOTE: Visual center alignment here is not considered as
-            mp::cpp_int discards leading zeroes which
-            would just shift the image, discarding alignment
-            either way. While you could technically leave
-            a miniscule number up front, it won't truly
-            be an accurate representation of the loaded image
-            in my opinion which is why I decide to zero-initialize.
-        */
         toastNotif("Loaded as .png/.jpg.", 2.0f);
         int h{}, w{}, ch{};
         stbi_uc *imgData{stbi_load(filePath.string().c_str(), &w, &h, &ch, rgbChannels)};
@@ -386,16 +387,22 @@ void Application::loadFile() {
         const int nH{static_cast<int>(h * scale)}, nW{static_cast<int>(w * scale)};
         std::vector<std::uint8_t> buffer(nH * nW * ch);
         stbir_resize_uint8_srgb(imgData, w, h, 0, buffer.data(), nW, nH, 0, STBIR_RGB);
+        stbi_image_free(static_cast<void *>(imgData));
+        const std::size_t xOffset{(imgWidth - nW) / 2};
+        const std::size_t yOffset{(imgHeight - nH) / 2};
         for (std::size_t y{0}; y < nH; ++y) {
             for (std::size_t x{0}; x < nW; ++x) {
                 for (std::size_t ch{0}; ch < imgCh; ++ch) {
-                    const std::size_t dstIdx{y * imgWidth * imgCh + x * imgCh + ch};
+                    const std::size_t dstIdx{(yOffset + y) * imgWidth * imgCh + (xOffset + x) * imgCh + ch};
                     const std::size_t srcIdx{y * nW * imgCh + (x * imgCh) + ch};
                     idxBuffer[dstIdx] = buffer[srcIdx];
                 }
             }
         }
-        stbi_image_free(static_cast<void *>(imgData));
+        std::uint8_t dBit{static_cast<std::uint8_t>((idxBuffer[0] & 0b1000'0000) >> 7)};
+        idxBuffer[0] |= 0b1000'0000;
+        mp::import_bits(state.imgIdx, idxBuffer.begin(), idxBuffer.end());
+        state.shouldClearSentinel = dBit == 0;
     } else {
         std::ifstream fileStream{filePath, std::ios::binary | std::ios::ate};
         std::streamsize fSize{fileStream.tellg()};
@@ -404,8 +411,9 @@ void Application::loadFile() {
             reinterpret_cast<char *>(idxBuffer.data()), std::min(idxBuffer.size(), static_cast<std::size_t>(fSize))
         );
         toastNotif("Loaded as generic binary stream.", 2.0f);
+        mp::import_bits(state.imgIdx, idxBuffer.begin(), idxBuffer.end());
     }
-    mp::import_bits(state.imgIdx, idxBuffer.begin(), idxBuffer.end());
+
     idxInterpolate();
 }
 

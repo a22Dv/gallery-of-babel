@@ -70,6 +70,7 @@ struct ApplicationState {
     std::string path{};
     TextureData textureData{};
     bool showPanels{true};
+    bool shouldClearSentinel{};
 };
 
 class Application {
