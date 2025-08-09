@@ -1,3 +1,4 @@
+#include <chrono>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
@@ -26,7 +27,6 @@
 #include <hello_imgui/screen_bounds.h>
 #include <imgui.h>
 #include <random>
-
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -204,20 +204,27 @@ void Application::additionalControlWindow() {
 void Application::controlWindow() {
     /*
        Got these digits from Wolfram-Alpha's online calculator. It's probably correct.
-       From 7.1795000302083x10^6,658,301. The maximum number of all 720p RGB images.
+       From 7.1795000302083x10^6,658,301. The number of all 720p RGB images.
    */
     constexpr const double maxMantissa{7.1795000302083};
     const double mantissa{maxMantissa * (static_cast<double>(state.coarseSliderIdx) / state.maxCoarseSlider)};
 
     const std::string labelText{std::format("Image #{}... x 10^6,658,301", mantissa)};
-    const std::string buttonText{"I'm Feeling Lucky!"};
+    const std::string buttonAText{"I'm Feeling Lucky!"};
+    const std::string buttonBText{"Image Search"};
 
-    float buttonX{ImGui::CalcTextSize(buttonText.c_str()).x};
+    float buttonAX{ImGui::CalcTextSize(buttonAText.c_str()).x};
+    float buttonBX{ImGui::CalcTextSize(buttonBText.c_str()).x};
     float imgNumX{ImGui::CalcTextSize(labelText.c_str()).x};
-    float spacing{ImGui::GetContentRegionMax().x - (buttonX + imgNumX) - 16.0f};
-    if (ImGui::Button(buttonText.c_str(), ImVec2{-1, 0})) {
+    float spacing{ImGui::GetContentRegionMax().x - (buttonAX + imgNumX) - 16.0f};
+    if (ImGui::Button(buttonAText.c_str(), ImVec2{0, 0})) {
         randomGen();
         idxInterpolate();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button(buttonBText.c_str(), ImVec2{0, 0})) {
+        fWndActive = true;
+        ImGui::OpenPopup("Image Search");
     }
     ImGui::PushItemWidth(-1);
     if (ImGui::SliderScalar(
@@ -245,6 +252,7 @@ void Application::controlWindow() {
         state.imgIdx = mp::min(state.maxImgIdx, state.imgIdx + state.jumpIntervalIdx);
         idxInterpolate();
     }
+    renderFileWindow();
 }
 
 Application::Application() {
@@ -307,6 +315,36 @@ void Application::idxInterpolate() {
         and cannot represent all of uint64_t in full precision.
     */
     state.coarseSliderIdx = ((state.imgIdx >> (totalBits - uint64Sz))).convert_to<std::uint64_t>() >> 1;
+}
+
+void Application::toastNotif(const std::string &text, const float durationSec) {
+    // We throw away requests if a notification is already active.
+    if (notif.isActive) {
+        return;
+    }   
+    notif.isActive = true;
+    notif.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<float>(durationSec));
+    notif.text = text;
+}
+
+void Application::renderFileWindow() {
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5f, 0.5f});
+    ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4{0.0f, 0.0f, 0.0f, 0.3f});
+    if (ImGui::BeginPopupModal("Image Search", &fWndActive)) {
+        ImGui::Text("Image Search");
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleColor();
+}
+
+void Application::loadFile() {
+
+}
+
+void Application::renderNotif() {
+    if (!notif.isActive) {
+        return;
+    }
 }
 
 } // namespace glb

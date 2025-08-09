@@ -9,6 +9,7 @@
 #include <hello_imgui/runner_params.h>
 #include <string>
 #include <vector>
+#include <chrono>
 
 namespace glb {
 
@@ -47,6 +48,13 @@ struct TextureData {
     TextureData() : texture(std::vector<std::uint8_t>(imgWidth * imgHeight * imgCh)) {};
 };
 
+struct Notification {
+    bool isActive{false};
+    std::string text{};
+    std::chrono::milliseconds currentD{};
+    std::chrono::milliseconds duration{};
+};
+
 struct ApplicationState {
     const std::uint64_t minSlider{0};
     const std::uint64_t maxCoarseSlider{UINT64_MAX / 2};
@@ -66,6 +74,8 @@ struct ApplicationState {
 
 class Application {
   private:
+    Notification notif{};
+    bool fWndActive;
     ApplicationState state{};
     const std::string title{"Gallery of Babel"};
     HelloImGui::RunnerParams rParams{};
@@ -77,6 +87,10 @@ class Application {
     void update();
     void idxInterpolate();
     void beforeExit();
+    void toastNotif(const std::string& text, const float durationSec);
+    void renderFileWindow();
+    void loadFile();
+    void renderNotif();
   public:
     void run();
     Application();
