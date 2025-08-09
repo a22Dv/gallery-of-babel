@@ -328,9 +328,9 @@ void Application::toastNotif(const std::string &text, const float durationSec) {
 }
 
 void Application::renderFileWindow() {
-    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2{0.5f, 0.5f});
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2{0.5f, 0.5f});
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4{0.0f, 0.0f, 0.0f, 0.3f});
-    if (ImGui::BeginPopupModal("Image Search", &fWndActive)) {
+    if (ImGui::BeginPopupModal("Image Search", &fWndActive, ImGuiWindowFlags_NoMove)) {
         ImGui::Text("Image Search");
         ImGui::EndPopup();
     }
