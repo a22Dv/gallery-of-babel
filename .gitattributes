@@ -1,1 +1,2 @@
 include/stb_image.h linguist-vendored
+include/CImg.h linguist-vendored

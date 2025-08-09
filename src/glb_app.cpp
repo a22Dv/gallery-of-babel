@@ -1,9 +1,12 @@
-#include <algorithm>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
 #include "glb_app.hpp"
 #include "stb_image.h"
+
+#define cimg_display 0
+#include "CImg.h"
+#include <algorithm>
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/cpp_int/import_export.hpp>
@@ -23,7 +26,7 @@
 #include <hello_imgui/screen_bounds.h>
 #include <imgui.h>
 #include <random>
-// #include <algorithm>
+
 
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
@@ -34,7 +37,7 @@
 #pragma comment(lib, "dwmapi.lib")
 
 /*
-    TODO:Add actual core display functionality.
+    TODO: Add file loading functionality.
 */
 
 namespace glb {
@@ -93,21 +96,64 @@ void Application::postInit() {
 };
 
 void Application::updateTexture() {
-    switch (state.spInterp) {
-    case static_cast<int>(SpatialInterpretation::INTERLEAVED):
+    static mp::cpp_int cachedIdx{state.imgIdx};
+    static SpatialInterpretation cachedSp{state.spInterp};
+    static ColorSpaceInterpretation cachedClr{state.clrInterp};
+    static std::vector<std::uint8_t> exportBuffer(imgHeight * imgWidth * imgCh);
+    if (cachedIdx == state.imgIdx && cachedSp == static_cast<SpatialInterpretation>(state.spInterp) &&
+        cachedClr == static_cast<ColorSpaceInterpretation>(state.clrInterp)) {
+        return;
+    }
+    auto interleavedToPlanar{[&] {
+        const std::size_t imgSize{imgHeight * imgWidth};
+        for (std::size_t i = 0; i < imgSize; ++i) {
+            for (std::size_t j = 0; j < imgCh; ++j) {
+                const std::uint8_t value{exportBuffer[i * imgCh + j]};
+                state.textureData.texture[imgSize * j + i] = value;
+            }
+        }
+    }};
+    switch (static_cast<SpatialInterpretation>(state.spInterp)) {
+    case SpatialInterpretation::INTERLEAVED:
         mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
         break;
-    case static_cast<int>(SpatialInterpretation::INTERLEAVED_REVERSED):
+    case SpatialInterpretation::INTERLEAVED_REVERSED:
         mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
         std::reverse(state.textureData.texture.begin(), state.textureData.texture.end());
-    case static_cast<int>(SpatialInterpretation::PLANAR):
-        mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
         break;
-    case static_cast<int>(SpatialInterpretation::GRAY_CODE): // Broken. 
-        state.imgIdx ^= (state.imgIdx >> 1);
-        mp::export_bits(state.imgIdx, state.textureData.texture.begin(), CHAR_BIT);
+    case SpatialInterpretation::PLANAR:
+        mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        interleavedToPlanar();
+        break;
+    case SpatialInterpretation::PLANAR_REVERSED:
+        mp::export_bits(state.imgIdx, exportBuffer.begin(), CHAR_BIT);
+        interleavedToPlanar();
+        std::reverse(state.textureData.texture.begin(), state.textureData.texture.end());
+        break;
+    case SpatialInterpretation::GRAY_CODE: {
+        const mp::cpp_int gImg{state.imgIdx ^ (state.imgIdx >> 1)};
+        mp::export_bits(gImg, state.textureData.texture.begin(), CHAR_BIT);
         break;
     }
+    default: break;
+    }
+    using namespace cimg_library;
+    switch (static_cast<ColorSpaceInterpretation>(state.clrInterp)) {
+    case ColorSpaceInterpretation::HSV: {
+        CImg<std::uint8_t> hsv{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
+        hsv.HSVtoRGB();
+        break;
+    }
+    case ColorSpaceInterpretation::YCBCR: {
+        CImg<std::uint8_t> ycbr{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
+        ycbr.YCbCrtoRGB();
+        break;
+    }
+    default: break;
+    }
+    cachedIdx = state.imgIdx;
+    cachedSp = static_cast<SpatialInterpretation>(state.spInterp);
+    cachedClr = static_cast<ColorSpaceInterpretation>(state.clrInterp);
 }
 
 void Application::update() {
@@ -178,6 +224,10 @@ void Application::controlWindow() {
             "##", ImGuiDataType_::ImGuiDataType_U64, &state.coarseSliderIdx, &state.minSlider, &state.maxCoarseSlider,
             labelText.c_str()
         )) {
+        /*
+            This is such a humongous number you might as well randomly fill in the lower bits, else
+            you'll just see plain black.
+        */
         randomGen();
         state.imgIdx >>= 64;
         state.imgIdx |= mp::cpp_int{state.coarseSliderIdx}
@@ -246,16 +296,6 @@ void Application::randomGen() {
             break;
         }
     }
-}
-
-void Application::sliderInterpolate() {
-    constexpr const std::size_t uint64Sz{sizeof(std::uint64_t) * CHAR_BIT};
-    const std::size_t totalBits{mp::msb(state.maxImgIdx) + 1};
-    /*
-          We have to interpolate this in such a roundabout way because it freezes when you use
-          multiplication and division on such a huge number. We only interpolate the top 64 bits of the number.
-      */
-    state.imgIdx = mp::cpp_int{state.coarseSliderIdx << 1} << totalBits - uint64Sz;
 }
 
 void Application::idxInterpolate() {

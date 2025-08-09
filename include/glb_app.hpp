@@ -11,6 +11,7 @@
 #include <vector>
 
 namespace glb {
+
 constexpr const std::uint64_t imgWidth{1280};
 constexpr const std::uint64_t imgHeight{720};
 constexpr const std::uint64_t imgCh{3};
@@ -74,10 +75,8 @@ class Application {
     void controlWindow();
     void additionalControlWindow();
     void update();
-    void sliderInterpolate();
     void idxInterpolate();
     void beforeExit();
-
   public:
     void run();
     Application();
