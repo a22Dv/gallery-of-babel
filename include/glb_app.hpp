@@ -51,7 +51,7 @@ struct TextureData {
 struct Notification {
     bool isActive{false};
     std::string text{};
-    std::chrono::milliseconds currentD{};
+    std::chrono::steady_clock::time_point start{};
     std::chrono::milliseconds duration{};
 };
 

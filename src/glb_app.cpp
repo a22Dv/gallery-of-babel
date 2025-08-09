@@ -1,23 +1,29 @@
-#include <chrono>
+#include <cstring>
 #define WIN32_LEAN_AND_MEAN
 #define NOMINMAX
 
-#include "glb_app.hpp"
+#define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
+
+#define STB_IMAGE_RESIZE_IMPLEMENTATION
+#include "stb_image_resize2.h"
 
 #define cimg_display 0
 #include "CImg.h"
+#include "glb_app.hpp"
 #include <algorithm>
 #include <boost/multiprecision/cpp_dec_float.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/cpp_int/import_export.hpp>
 #include <boost/multiprecision/detail/default_ops.hpp>
 #include <boost/multiprecision/detail/min_max.hpp>
+#include <chrono>
 #include <climits>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <hello_imgui/app_window_params.h>
 #include <hello_imgui/docking_params.h>
 #include <hello_imgui/hello_imgui.h>
@@ -26,6 +32,7 @@
 #include <hello_imgui/runner_params.h>
 #include <hello_imgui/screen_bounds.h>
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <random>
 
 #define GLFW_EXPOSE_NATIVE_WIN32
@@ -33,7 +40,6 @@
 #include <GLFW/glfw3native.h>
 #include <dwmapi.h>
 #include <libloaderapi.h>
-
 #pragma comment(lib, "dwmapi.lib")
 
 /*
@@ -43,6 +49,7 @@
 namespace glb {
 
 constexpr const int rgbaChannels{4};
+constexpr const int rgbChannels{3};
 constexpr const int icoSize{32};
 const double log2_10{std::log2f(10)};
 constexpr const std::uint64_t maxB2{22'118'400}; // 1280 * 720 * 8 * 3, number of bits in a 720p image.
@@ -157,7 +164,7 @@ void Application::updateTexture() {
 }
 
 void Application::update() {
-    if (ImGui::IsKeyPressed(ImGuiKey_H, false)) {
+    if (ImGui::IsKeyPressed(ImGuiKey_H, false) && !fWndActive) {
         state.showPanels = !state.showPanels;
         for (HelloImGui::DockableWindow &window : HelloImGui::GetRunnerParams()->dockingParams.dockableWindows) {
             window.isVisible = state.showPanels;
@@ -170,6 +177,7 @@ void Application::update() {
     );
     ImDrawList *bgDrawList{ImGui::GetBackgroundDrawList(ImGui::GetMainViewport())};
     bgDrawList->AddImage(static_cast<ImTextureID>(state.textureData.textureId), ImVec2{0, 0}, ImVec2{1280, 720});
+    renderNotif();
 }
 
 void Application::beforeExit() {
@@ -252,6 +260,7 @@ void Application::controlWindow() {
         state.imgIdx = mp::min(state.maxImgIdx, state.imgIdx + state.jumpIntervalIdx);
         idxInterpolate();
     }
+    // Weird bug where the window does not appear visible when called on the main update() loop. Hence placed here.
     renderFileWindow();
 }
 
@@ -321,30 +330,105 @@ void Application::toastNotif(const std::string &text, const float durationSec) {
     // We throw away requests if a notification is already active.
     if (notif.isActive) {
         return;
-    }   
+    }
     notif.isActive = true;
     notif.duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::duration<float>(durationSec));
     notif.text = text;
+    notif.start = std::chrono::steady_clock::now();
 }
 
 void Application::renderFileWindow() {
+    static const std::string note{"Note:\n"
+                                  "Accepts any kind of file, however only the first 2.7MB\n"
+                                  "will be interpreted. In the case of .jpg/.png,the pixel data\n"
+                                  "will be transformed in order to fit within the program's\n"
+                                  "buffer dimensions (1280x720)."};
     ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Always, ImVec2{0.5f, 0.5f});
+    ImGui::SetNextWindowSize(ImVec2{ImGui::CalcTextSize(note.c_str()).x + 30.0f, 170.0f});
     ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4{0.0f, 0.0f, 0.0f, 0.3f});
-    if (ImGui::BeginPopupModal("Image Search", &fWndActive, ImGuiWindowFlags_NoMove)) {
-        ImGui::Text("Image Search");
+    if (ImGui::BeginPopupModal("Image Search", &fWndActive, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize)) {
+        ImGui::Text("File path");
+        ImGui::InputText("##", &state.path);
+        if (ImGui::Button("Load File") || ImGui::IsKeyDown(ImGuiKey_Enter)) {
+            loadFile();
+            fWndActive = false;
+        }
+        ImGui::Text("%s", note.c_str());
         ImGui::EndPopup();
     }
     ImGui::PopStyleColor();
 }
 
 void Application::loadFile() {
-
+    std::filesystem::path filePath{state.path};
+    if (!std::filesystem::exists(filePath)) {
+        toastNotif("Invalid path.", 2.0f);
+    }
+    std::string extension{filePath.extension().string()};
+    std::vector<std::uint8_t> idxBuffer(imgWidth * imgHeight * imgCh, 0);
+    if (extension == ".png" || extension == ".jpg") {
+        /*
+            Refactor to row-wise memcpy if performance
+            in this part in particular takes a hit.
+            NOTE: Visual center alignment here is not considered as
+            mp::cpp_int discards leading zeroes which
+            would just shift the image, discarding alignment
+            either way. While you could technically leave
+            a miniscule number up front, it won't truly
+            be an accurate representation of the loaded image
+            in my opinion which is why I decide to zero-initialize.
+        */
+        toastNotif("Loaded as .png/.jpg.", 2.0f);
+        int h{}, w{}, ch{};
+        stbi_uc *imgData{stbi_load(filePath.string().c_str(), &w, &h, &ch, rgbChannels)};
+        const float sH{static_cast<float>(imgHeight) / h}, sW{static_cast<float>(imgWidth) / w};
+        const float scale{std::min(sH, sW)};
+        const int nH{static_cast<int>(h * scale)}, nW{static_cast<int>(w * scale)};
+        std::vector<std::uint8_t> buffer(nH * nW * ch);
+        stbir_resize_uint8_srgb(imgData, w, h, 0, buffer.data(), nW, nH, 0, STBIR_RGB);
+        for (std::size_t y{0}; y < nH; ++y) {
+            for (std::size_t x{0}; x < nW; ++x) {
+                for (std::size_t ch{0}; ch < imgCh; ++ch) {
+                    const std::size_t dstIdx{y * imgWidth * imgCh + x * imgCh + ch};
+                    const std::size_t srcIdx{y * nW * imgCh + (x * imgCh) + ch};
+                    idxBuffer[dstIdx] = buffer[srcIdx];
+                }
+            }
+        }
+        stbi_image_free(static_cast<void *>(imgData));
+    } else {
+        std::ifstream fileStream{filePath, std::ios::binary | std::ios::ate};
+        std::streamsize fSize{fileStream.tellg()};
+        fileStream.seekg(0);
+        fileStream.read(
+            reinterpret_cast<char *>(idxBuffer.data()), std::min(idxBuffer.size(), static_cast<std::size_t>(fSize))
+        );
+        toastNotif("Loaded as generic binary stream.", 2.0f);
+    }
+    mp::import_bits(state.imgIdx, idxBuffer.begin(), idxBuffer.end());
+    idxInterpolate();
 }
 
 void Application::renderNotif() {
     if (!notif.isActive) {
         return;
     }
+    ImGui::OpenPopup("notification", ImGuiPopupFlags_NoReopen);
+    const std::chrono::steady_clock::time_point now{std::chrono::steady_clock::now()};
+    const std::chrono::milliseconds cDuration{std::chrono::duration_cast<std::chrono::milliseconds>(now - notif.start)};
+    if (cDuration < notif.duration) {
+        ImGui::SetNextWindowPos(ImVec2{5.0f, 5.0f});
+        if (ImGui::BeginPopup(
+                "notification",
+                ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoFocusOnAppearing
+            )) {
+            ImGui::Text("%s", notif.text.c_str());
+            ImGui::EndPopup();
+        }
+        return;
+    }
+    ImGui::CloseCurrentPopup();
+    notif.isActive = false;
 }
 
 } // namespace glb
