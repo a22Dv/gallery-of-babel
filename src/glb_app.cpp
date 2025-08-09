@@ -148,7 +148,7 @@ void Application::updateTexture() {
             Gray code scrambles the index itself, and does not operate
             on some other representation of it like the other modes.
             mp::export_bits always "efficiently" skips leading zeroes.
-            Visually flushing the image to the left. 
+            Visually flushing the image to the left.
         */
         const mp::cpp_int gImg{state.imgIdx ^ (state.imgIdx >> 1)};
         mp::export_bits(gImg, state.textureData.texture.begin(), CHAR_BIT);
@@ -207,8 +207,22 @@ void Application::additionalControlWindow() {
     if (ImGui::SliderScalar(
             "##", ImGuiDataType_::ImGuiDataType_U64, &state.jumpSliderIdx, &state.minSlider,
             &state.maxJumpIntervalSlider, std::format("Interval: 1x10^{}", state.jumpSliderIdx).c_str()
-        )) {
-        state.jumpIntervalIdx = mp::pow(mp::cpp_int{10}, state.jumpSliderIdx);
+        ) ||
+        state.executeIntervalCalculation) {
+        /*
+            We have to quit halfway before the UI freezes when it goes through with the calculation.
+            TODO: Fix. Warning doesn't show despite deferral.
+        */
+        if (state.jumpSliderIdx > 500'000 && !state.executeIntervalCalculation) {
+            toastNotif(
+                "WARNING: Larger interval values take significantly longer to calculate...\nUI will be unresponsive.",
+                3.0f
+            );
+            state.executeIntervalCalculation = true;
+        } else if (state.executeIntervalCalculation || state.jumpSliderIdx < 500'000) {
+            state.jumpIntervalIdx = mp::pow(mp::cpp_int{10}, state.jumpSliderIdx);
+            state.executeIntervalCalculation = false;
+        }
     }
     ImGui::SliderInt(
         "##x", &state.spInterp, 0, static_cast<int>(SpatialInterpretation::COUNT) - 1,

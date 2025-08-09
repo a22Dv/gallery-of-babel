@@ -71,6 +71,7 @@ struct ApplicationState {
     TextureData textureData{};
     bool showPanels{true};
     bool shouldClearSentinel{};
+    bool executeIntervalCalculation{};
 };
 
 class Application {
