@@ -40,10 +40,6 @@
 #include <libloaderapi.h>
 #pragma comment(lib, "dwmapi.lib")
 
-/*
-    Export bits tries to "stay"
-*/
-
 namespace glb {
 
 constexpr const int rgbaChannels{4};
