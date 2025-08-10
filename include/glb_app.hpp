@@ -58,7 +58,7 @@ struct Notification {
 struct ApplicationState {
     const std::uint64_t minSlider{0};
     const std::uint64_t maxCoarseSlider{UINT64_MAX / 2};
-    const std::uint64_t maxJumpIntervalSlider{6'658'301}; // We jump exactly 1x10^6,648,301 at maximum.
+    const std::uint64_t maxJumpIntervalSlider{6'658'301}; // We jump exactly 1x10^6,658,301 at maximum.
     const mp::cpp_int maxImgIdx{mp::pow(mp::cpp_int{2}, imgWidth *imgHeight *imgCh *CHAR_BIT) - 1};
     int spInterp{static_cast<int>(SpatialInterpretation::INTERLEAVED)};
     int clrInterp{static_cast<int>(ColorSpaceInterpretation::RGB)};

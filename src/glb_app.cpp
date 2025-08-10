@@ -41,7 +41,7 @@
 #pragma comment(lib, "dwmapi.lib")
 
 /*
-    TODO: Add file loading functionality.
+    Export bits tries to "stay"
 */
 
 namespace glb {
@@ -159,13 +159,6 @@ void Application::updateTexture() {
     CImg<std::uint8_t> img{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
     switch (static_cast<ColorSpaceInterpretation>(state.clrInterp)) {
     case ColorSpaceInterpretation::HSV: {
-        /*
-            This call's results differs between DEBUG and RELEASE builds.
-            Although there's probably a fix for this somewhere (that I don't know where to even start with),
-            I'll leave it be because the "bug" looks aesthetically pleasing compared to
-            the "noisy" but "correct" result of the DEBUG build. Not sure if this will
-            persist across compilers.
-        */
         img.HSVtoRGBModified();
         break;
     }
@@ -281,6 +274,10 @@ void Application::controlWindow() {
     ImGui::PopItemWidth();
     float availableWidth{ImGui::GetContentRegionAvail().x};
     float intervalButtonWidth{availableWidth / 2 - 5.0f};
+    /*
+        When set to the absolute maximum, the slider can only affect the lower bits. The cap given by
+        min and max would then be left at the bottom, either pure black or white. 
+    */
     if (ImGui::Button("<<", ImVec2{intervalButtonWidth, 0}) || ImGui::IsKeyPressed(ImGuiKey_LeftArrow, true)) {
         state.imgIdx = mp::max(mp::cpp_int{0}, state.imgIdx - state.jumpIntervalIdx);
         idxInterpolate();
@@ -431,7 +428,6 @@ void Application::loadFile() {
         toastNotif("Loaded as generic binary stream.", 2.0f);
         mp::import_bits(state.imgIdx, idxBuffer.begin(), idxBuffer.end());
     }
-
     idxInterpolate();
 }
 
