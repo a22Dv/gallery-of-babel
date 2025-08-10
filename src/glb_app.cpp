@@ -18,7 +18,6 @@
 #include <boost/multiprecision/detail/min_max.hpp>
 #include <chrono>
 #include <climits>
-#include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <format>
@@ -50,7 +49,6 @@ namespace glb {
 constexpr const int rgbaChannels{4};
 constexpr const int rgbChannels{3};
 constexpr const int icoSize{32};
-const double log2_10{std::log2f(10)};
 constexpr const std::uint64_t maxB2{22'118'400}; // 1280 * 720 * 8 * 3, number of bits in a 720p image.
 
 namespace {
@@ -72,10 +70,11 @@ void Application::postInit() {
         This is Windows-specific. Honestly the default white title bar clashes with the application's theme
         in my opinion so we set it manually here.
     */
-    GLFWwindow *window{static_cast<GLFWwindow *>(HelloImGui::GetRunnerParams()->backendPointers.glfwWindow)};
+    GLFWwindow *window{static_cast<GLFWwindow *>(rParams.backendPointers.glfwWindow)};
     HWND hwnd{glfwGetWin32Window(window)};
     COLORREF darkColor = 0x00252322;
     DwmSetWindowAttribute(hwnd, DWMWINDOWATTRIBUTE::DWMWA_CAPTION_COLOR, &darkColor, sizeof(darkColor));
+
     std::filesystem::path assetDir{getAssetDir()};
     int icoX{}, icoY{}, icoCh{};
     assetDir.append("gll_32x32.png");
@@ -157,15 +156,21 @@ void Application::updateTexture() {
     default: break;
     }
     using namespace cimg_library;
+    CImg<std::uint8_t> img{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
     switch (static_cast<ColorSpaceInterpretation>(state.clrInterp)) {
     case ColorSpaceInterpretation::HSV: {
-        CImg<std::uint8_t> hsv{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
-        hsv.HSVtoRGB();
+        /*
+            This call's results differs between DEBUG and RELEASE builds.
+            Although there's probably a fix for this somewhere (that I don't know where to even start with),
+            I'll leave it be because the "bug" looks aesthetically pleasing compared to
+            the "noisy" but "correct" result of the DEBUG build. Not sure if this will
+            persist across compilers.
+        */
+        img.HSVtoRGBModified();
         break;
     }
     case ColorSpaceInterpretation::YCBCR: {
-        CImg<std::uint8_t> ycbr{state.textureData.texture.data(), imgWidth, imgHeight, 1, imgCh, true};
-        ycbr.YCbCrtoRGB();
+        img.YCbCrtoRGB();
         break;
     }
     default: break;
@@ -208,20 +213,19 @@ void Application::additionalControlWindow() {
             "##", ImGuiDataType_::ImGuiDataType_U64, &state.jumpSliderIdx, &state.minSlider,
             &state.maxJumpIntervalSlider, std::format("Interval: 1x10^{}", state.jumpSliderIdx).c_str()
         ) ||
-        state.executeIntervalCalculation) {
-        /*
-            We have to quit halfway before the UI freezes when it goes through with the calculation.
-            TODO: Fix. Warning doesn't show despite deferral.
-        */
+        state.executeIntervalCalculation != 0) {
+        // We have to quit halfway before the UI freezes when it goes through with the calculation.
         if (state.jumpSliderIdx > 500'000 && !state.executeIntervalCalculation) {
             toastNotif(
                 "WARNING: Larger interval values take significantly longer to calculate...\nUI will be unresponsive.",
                 3.0f
             );
-            state.executeIntervalCalculation = true;
-        } else if (state.executeIntervalCalculation || state.jumpSliderIdx < 500'000) {
+            state.executeIntervalCalculation = 3;
+        } else if (state.executeIntervalCalculation == 1 || state.jumpSliderIdx < 500'000) {
             state.jumpIntervalIdx = mp::pow(mp::cpp_int{10}, state.jumpSliderIdx);
-            state.executeIntervalCalculation = false;
+            state.executeIntervalCalculation--;
+        } else if (state.executeIntervalCalculation != 1) {
+            state.executeIntervalCalculation--;
         }
     }
     ImGui::SliderInt(

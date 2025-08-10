@@ -37275,6 +37275,57 @@ namespace cimg_library {
       return *this;
     }
 
+    CImg<T>& HSVtoRGBModified() {
+    /*
+        This is a quick AI-generated FIX. The original HSVtoRGB() function
+        produces wildly different results between Debug and Release builds
+        most likely attributed to floating-point precision issues
+        and unsafe casting as well as implicit assumptions such that S & V is 
+        scaled from 0.0 to 1.0. This one stays consistent but still needs 
+        to be reviewed, but so far the results are acceptable.
+    */
+    if (_spectrum != 3) {
+        throw CImgInstanceException(_cimg_instance
+                                    "HSVtoRGB(): Instance is not a HSV image.",
+                                    cimg_instance);
+    }
+    T* pR = data(0, 0, 0, 0);
+    T* pG = data(0, 0, 0, 1);
+    T* pB = data(0, 0, 0, 2); 
+    const longT whd = (longT)width() * height() * depth();
+    cimg_pragma_openmp(parallel for cimg_openmp_if_size(whd, 256))
+    for (longT N = 0; N < whd; ++N) {
+        const Tfloat hue = static_cast<Tfloat>(pR[N]) * 360.0f / 255.0f; 
+        const Tfloat saturation = static_cast<Tfloat>(pG[N]) / 255.0f;
+        const Tfloat value = static_cast<Tfloat>(pB[N]) / 255.0f;
+
+        const Tfloat C = value * saturation;
+        const Tfloat H_prime = hue / 60.0f;
+        const Tfloat X = C * (1.0f - std::abs(fmod(H_prime, 2.0f) - 1.0f));
+        const Tfloat m = value - C;
+
+        Tfloat r_temp, g_temp, b_temp;
+        const int sector = static_cast<int>(std::floor(H_prime));
+        switch (sector) {
+            case 0: r_temp = C; g_temp = X; b_temp = 0; break;
+            case 1: r_temp = X; g_temp = C; b_temp = 0; break;
+            case 2: r_temp = 0; g_temp = C; b_temp = X; break;
+            case 3: r_temp = 0; g_temp = X; b_temp = C; break;
+            case 4: r_temp = X; g_temp = 0; b_temp = C; break;
+            case 5: r_temp = C; g_temp = 0; b_temp = X; break;
+            default: r_temp = C; g_temp = 0; b_temp = X; break; 
+        }
+        const T R_out = static_cast<T>(std::round((r_temp + m) * 255.0f));
+        const T G_out = static_cast<T>(std::round((g_temp + m) * 255.0f));
+        const T B_out = static_cast<T>(std::round((b_temp + m) * 255.0f));
+        pR[N] = R_out;
+        pG[N] = G_out;
+        pB[N] = B_out;
+    }
+    return *this;
+}
+
+
     //! Convert pixel values from HSV to RGB color spaces \newinstance.
     CImg<Tuchar> get_HSVtoRGB() const {
       return CImg<Tuchar>(*this,false).HSVtoRGB();

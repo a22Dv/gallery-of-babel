@@ -71,7 +71,7 @@ struct ApplicationState {
     TextureData textureData{};
     bool showPanels{true};
     bool shouldClearSentinel{};
-    bool executeIntervalCalculation{};
+    std::uint8_t executeIntervalCalculation{0};
 };
 
 class Application {
